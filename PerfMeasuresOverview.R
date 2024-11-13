@@ -8,6 +8,8 @@
 # Written by Ben Van Calster
 # October 2024
 
+
+
 ########################################
 # LOAD PACKAGES AND SET WORK DIRECTORY #
 ########################################
@@ -22,7 +24,12 @@ setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 # Load packages
 pacman::p_load(DescTools, ggplot2, psych, pROC, PRROC, yardstick, pROC, rms, 
                CalibrationCurves, dplyr, ResourceSelection, gtools, rmda, 
-               dcurves, ROCR, auRoc)
+               dcurves, ROCR)
+
+
+####################
+# CUSTOM FUNCTIONS #
+####################
 
 
 # Simple function to calculate AUROC
@@ -193,7 +200,7 @@ ClassPerfBin <- function(y, p, cut){
   # Get F1 score and Matthew's Correlation Coefficient:
   F1 = 2 * ((PPV * Sens) / (PPV + Sens))
   MCC = (TP * TN - FP * FN) / 
-    sqrt((TP + FP) * (TP + FN) * (TN + FP) * (TN + FN))
+        sqrt((TP + FP) * (TP + FN) * (TN + FP) * (TN + FN))
   # Put all measures together and create column names:
   classperf = as.data.frame(t(c(Acc, Bar, You, DOR, Kap, F1, MCC, Sens, Spec, 
                                 PPV, NPV)))
@@ -212,11 +219,11 @@ ClassPerfBin <- function(y, p, cut){
 #  costratio: cost of false negative / cost of false positive to be used for
 #  Expected Cost (EC); this is related to the decision threshold used in Net
 #  Benefit (NB): if you want NB for cut = 0.1, then costratio for EC is 
-#  odds(cut) = cut/(1-cut)
+#  1/odds(cut) = (1-cut)/cut
 UtilPerfBin <- function(y, p, cut, costratio){
   # Apply NB and SNB formulas:
   NB = mean((p>=cut) * (y==1)) - 
-    (cut / (1-cut)) * mean((p>=cut) * (y==0))
+       (cut / (1-cut)) * mean((p>=cut) * (y==0))
   SNB = NB / mean(y)
   # to calculate EC, sort probability estimates:
   risksort = sort(p)
@@ -228,9 +235,9 @@ UtilPerfBin <- function(y, p, cut, costratio){
     ecpts[i, 1] = sum(p[y==1] < risksort[i]) / sum(y==1)
     ecpts[i, 2] = sum(p[y==0] >= risksort[i]) / sum(y==0)
     ecpts[i, 3] = (ecpts[i, 1] * mean(y) * 
-                     (costratio * (costratio>1) + 1 * (costratio<=1))) + 
-      (ecpts[i, 2] * (1-mean(y)) * 
-         (costratio * (costratio<1) + 1 * (costratio>=1)))
+                  (costratio * (costratio>1) + 1 * (costratio<=1))) + 
+                  (ecpts[i, 2] * (1-mean(y)) * 
+                  (costratio * (costratio<1) + 1 * (costratio>=1)))
   }
   # the final EC is then the minimum EC over all possible thresholds:
   EC = min(ecpts[,3])
@@ -244,12 +251,47 @@ UtilPerfBin <- function(y, p, cut, costratio){
 }
 
 
+# Function to get data for a plot of EC
+# Input: 
+#  p: vector with risk estimates
+#  y: vector with outcomes, i.e. 0 or 1
+#  ncostfp: normalized costs of false positive to be used
+#  for calculating EC values; normalized means both costs sum to one, such that
+#  the normalized cost of a false negative is 1 minus the normalized cost of a
+#  false positive
+ecplotv <- function(y, p, ncostfp){
+  # to calculate EC, sort probability estimates:
+  risksort = sort(p)
+  # then, per normalized cost of a false positive, find the minimum EC and the
+  # probability threshold for which the minimum EC is achieved
+  ec_res = data.frame(matrix(NA,2,length(ncostfp)))
+  for (i in 1:length(ncostfp)){ 
+    # For every possible threshold (based on sorted probabilities),
+    # calculate number of false negatives, number of false positives, and EC
+    # based on FN, FP and the desired normalized costs of a false positive:
+    ecpts = as.data.frame(matrix(NA, nrow = length(risksort), ncol = 3))
+    for (j in 1:length(risksort)){
+      ecpts[j, 1] = sum(p[y==1] < risksort[j]) / sum(y==1)
+      ecpts[j, 2] = sum(p[y==0] >= risksort[j]) / sum(y==0)
+      ecpts[j, 3] = (ecpts[j, 1] * mean(y) * (1-ncostfp[i]) + 
+                       (ecpts[j, 2] * (1-mean(y)) * ncostfp[i]))
+    }
+    # the final EC is then the minimum EC over all possible thresholds:
+    ec_res[1,i] = min(ecpts[,3])
+    # this is the probability threshold for which the minimum EC was obtained
+    ec_res[2,i] = risksort[which.min(ecpts[, 3])]
+    # ec_res[3,i] = mean(risksort[which.min(ecpts[, 3])],rev(risksort)[which.min(ecpts[, 3])])
+  }
+  return(ec_res)
+}
+
+
 
 ##########################################################################
 # LOAD DATA (transIOTA  study, final data complete cases (MCAR assumed)) #
 ##########################################################################
 
-dcase=read.table(file = "data_case_study.txt",
+dcase=read.table(file = "https://raw.githubusercontent.com/benvancalster/PerfMeasuresOverview/refs/heads/main/data_case_study.txt",
                  sep = " ", header = TRUE, na.strings = c(""))
 
 # Get factor version of the outcome, to be used in ggplot applications:
@@ -283,9 +325,9 @@ rocptsadnex = as.data.frame(matrix(NA, nrow = length(adnexsort), ncol = 2))
 colnames(rocptsadnex) = c("Sens", "1-Spec")
 for (i in 1:length(adnexsort)){
   rocptsadnex[i, 1] = sum(dcase$pmalwo[dcase$Outcome1==1] >= adnexsort[i]) / 
-    sum(dcase$Outcome1==1)
+                      sum(dcase$Outcome1==1)
   rocptsadnex[i, 2] = sum(dcase$pmalwo[dcase$Outcome1==0] >= adnexsort[i]) / 
-    sum(dcase$Outcome1==0)
+                      sum(dcase$Outcome1==0)
 }
 
 # Add a row with probability threshold 0 (sensitivity and false positive rate
@@ -309,9 +351,9 @@ adnexsort = sort(dcase$pmalwo)
 prcptsadnex = as.data.frame(matrix(NA, nrow = length(adnexsort), ncol = 2))
 for (i in 1:length(adnexsort)){
   prcptsadnex[i,1] = sum(dcase$pmalwo[dcase$Outcome1==1]>=adnexsort[i])/ 
-    sum(dcase$Outcome1==1)
+                     sum(dcase$Outcome1==1)
   prcptsadnex[i,2] = sum(dcase$pmalwo[dcase$Outcome1==1]>=adnexsort[i])/ 
-    sum(dcase$pmalwo >= adnexsort[i])
+                     sum(dcase$pmalwo >= adnexsort[i])
 }
 
 
@@ -341,11 +383,17 @@ title(ylab="Precision / PPV", line=2.2, cex.lab = 1.1)
 title(xlab="Sensitivity / Recall", line=2.2, cex.lab = 1.1)
 
 # pAUROC illustration:
+fpr <- rocptsadnex[, 2]
+tpr <- rocptsadnex[, 1]
+tpr_threshold <- 0.8  # Set threshold value for tpr
 plot(rocptsadnex[, 2], rocptsadnex[, 1], type = "l", lwd = 2, col = "black", 
      main = "C", xlab = "", ylab = "", cex.axis = 0.8)
 # add rectangle to hide the intolerable part of the ROC plot:
-polygon(c(-0.01, 1.01, 1.01, -0.01), c(0, 0, 0.8, 0.8), col = "lightgray", 
-        border = NA)
+# polygon(c(-0.01, 1.01, 1.01, -0.01), c(0, 0, 0.8, 0.8), col = "lightgray", 
+#         border = NA)
+polygon(c(fpr+0.003, rev(fpr)), 
+        c(ifelse(tpr <= tpr_threshold, tpr, 0.8), rep(0, length(fpr))), 
+        col = "gray", border = NA)
 
 text(x = 0.5, y = 0.4, "Not used to calculate pAUROC", adj = 0.5, cex=1)
 legend("bottomright", inset = .02, legend = c("pAUROC 0.14"), col = c("black"), 
@@ -395,8 +443,6 @@ CalADNEX = CalPerfBin(y = dcase$Outcome1, p = dcase$pmalwo, flexcal = "loess")
 
 # Calibration plots by menopausal status
 
-# Postmenopausal status is masked for privacy reasons
-
 # dev.off()
 # val.prob.ci.2(dcase$pmalwo[dcase$Postmenopausal2=="no"], 
 #               dcase$Outcome1[dcase$Postmenopausal2=="no"],
@@ -426,13 +472,12 @@ CalADNEX = CalPerfBin(y = dcase$Outcome1, p = dcase$pmalwo, flexcal = "loess")
 p <- ggplot(dcase, aes(x = Out1, y = pmalwo, fill = Out1)) +
   geom_violin(fill="white") + 
   geom_jitter(cex=0.7, shape=16, position=position_jitter(0.1)) +
-  theme_classic()+
   theme(legend.position = "none", 
         axis.text.x = element_text(size = 14, face="bold", color="black"), 
         axis.text.y = element_text(size = 12), 
         axis.title.x = element_blank(),
         axis.title.y = element_text(size = 14, face="bold")) +
-  ylab("Estimated risk of malignancy")
+        ylab("Estimated risk of malignancy")+ theme_classic()
 p
 
 # Box plot with jittered dots (not used):
@@ -466,16 +511,16 @@ clsptsadnex = as.data.frame(matrix(NA, nrow = length(adnexsort), ncol = 4))
 for (i in 1:length(adnexsort)){
   # Sensitivity/recall
   clsptsadnex[i, 1] = sum(dcase$pmalwo[dcase$Outcome1==1] >= adnexsort[i]) / 
-    sum(dcase$Outcome1==1)
+                      sum(dcase$Outcome1==1)
   # Specificity
   clsptsadnex[i, 2] = sum(dcase$pmalwo[dcase$Outcome1==0] < adnexsort[i]) / 
-    sum(dcase$Outcome1==0)
+                      sum(dcase$Outcome1==0)
   # PPV/precision
   clsptsadnex[i, 3] = sum(dcase$Outcome1[dcase$pmalwo>=adnexsort[i]] == 1) / 
-    sum(dcase$pmalwo>=adnexsort[i])
+                      sum(dcase$pmalwo>=adnexsort[i])
   # NPV
   clsptsadnex[i, 4] = sum(dcase$Outcome1[dcase$pmalwo<adnexsort[i]] == 0) / 
-    sum(dcase$pmalwo<adnexsort[i])
+                      sum(dcase$pmalwo<adnexsort[i])
 }
 
 # Prepare panels:
@@ -583,22 +628,35 @@ for (i in 1:length(dcasm$orig)){
   )
 }
 
-# CODE TO PLOT COST CURVES
+
+# GET DATA TO PLOT EC BY NORMALIZED COST OF A FALSE POSITIVE
+
+# EC values for the model
+ecmodel = ecplotv(y = dcase$Outcome1, p = dcase$pmalwo, 
+                  ncostfp = c(1:99)/100)
+
+# EC values for treat all and treat none
+ncostfp = c(1:99)/100
+ecTA = ncostfp * (mean(dcase$Outcome1) / (1 - mean(dcase$Outcome1))) 
+ecTN = (1-ncostfp) * ((1 - mean(dcase$Outcome1)) / mean(dcase$Outcome1))
+
+
+# CODE TO PLOT COST CURVES (not used)
 
 # use prediction function from ROCR package to put risk estimates in right
 # right format to move on with calculations for cost curves
-ccadnex0 = prediction(dcase$pmalwo, dcase$Outcome1)
+# ccadnex0 = prediction(dcase$pmalwo, dcase$Outcome1)
 
 # use performance function from ROCR package to get calculations for cost curves
-ccadnex = performance(ccadnex0, measure = "ecost") 
+# ccadnex = performance(ccadnex0, measure = "ecost") 
 
 # extract x-axis values (ccadnex_pc) and y-axis values (ccadnex_nec) for the
 # cost curve
-ccadnex_pc = ccadnex@x.values[[1]]
-ccadnex_nec = ccadnex@y.values[[1]]
+# ccadnex_pc = ccadnex@x.values[[1]]
+# ccadnex_nec = ccadnex@y.values[[1]]
 
 
-# PLOT WITH DECISION CURVES USING NB OR SNB AND WITH COST CURVE
+# PLOT WITH DECISION CURVES USING NB, SNB OR EC
 
 grid = seq(0, 1, by = .01)
 ngrid = length(grid)
@@ -632,16 +690,28 @@ legend("topright", inset = .02, legend = c("ADNEX", "All", "None"),
 title(ylab="Standardized net benefit", line=2.2, cex.lab = 1.1)
 title(xlab="Decision threshold", line=2.2, cex.lab = 1.1)
 
+# EC curve
+plot(1-ncostfp, ecmodel[1,], type = "l", col = "black", lwd = 2, main = "C", 
+     xlim = c(0,1), ylim = c(0,0.5), xlab = "", ylab = "", 
+     cex.axis=0.8)
+lines(1-ncostfp,ecTA, col="gray",lwd=2)
+lines(1-ncostfp,ecTN, col="gray",lwd=1)
+legend("topright", inset = .02, legend = c("ADNEX", "All", "None"), 
+       col = c("black", "gray", "gray"), lty = c(1, 1, 1), lwd = c(2, 2, 1), 
+       cex = 1)
+title(ylab="Expected cost", line=2.2, cex.lab = 1.1)
+title(xlab="Normalized cost of false negative", line=2.2, cex.lab = 1.1)
+
 # Cost curve
-plot(ccadnex_pc, ccadnex_nec, type = "l", lwd = 2, lty = 1, col = "black", 
-     main = "C", xlab = "", ylab = "", cex.lab = 1.2, cex.axis=0.8, 
-     xlim = c(0, 1), ylim = c(0, 0.55))
-lines(c(0, .5), c(0, .5), lwd = 2, lty = 1, col = "gray")
-lines(c(.5, 1), c(.5, 0), lwd = 2, lty = 1, col = "gray")
-legend("topright", inset = .02, legend = c("ADNEX", "Default"), 
-       col = c("black", "gray"), lty = c(1, 1), lwd = c(2, 2), cex = 1)
-title(ylab="Normalized expected cost", line=2.2, cex.lab = 1.1)
-title(xlab="PC(+) - Probability*Cost", line=2.2, cex.lab = 1.1)
+# plot(ccadnex_pc, ccadnex_nec, type = "l", lwd = 2, lty = 1, col = "black", 
+#      main = "C", xlab = "", ylab = "", cex.lab = 1.2, cex.axis=0.8, 
+#      xlim = c(0, 1), ylim = c(0, 0.55))
+# lines(c(0, .5), c(0, .5), lwd = 2, lty = 1, col = "gray")
+# lines(c(.5, 1), c(.5, 0), lwd = 2, lty = 1, col = "gray")
+# legend("topright", inset = .02, legend = c("ADNEX", "Default"), 
+#        col = c("black", "gray"), lty = c(1, 1), lwd = c(2, 2), cex = 1)
+# title(ylab="Normalized expected cost", line=2.2, cex.lab = 1.1)
+# title(xlab="PC(+) - Probability*Cost", line=2.2, cex.lab = 1.1)
 
 # Close panel:
 par(mfrow = c(1,1))
@@ -725,9 +795,9 @@ adnexusort = sort(dcase$pmalwou)
 rocptsadnexu = as.data.frame(matrix(NA, nrow = length(adnexusort), ncol = 2))
 for (i in 1:length(adnexusort)){
   rocptsadnexu[i, 1] = sum(dcase$pmalwou[dcase$Outcome1==1] >= adnexusort[i]) / 
-    sum(dcase$Outcome1==1)
+                       sum(dcase$Outcome1==1)
   rocptsadnexu[i, 2] = sum(dcase$pmalwou[dcase$Outcome1==0] >= adnexusort[i]) / 
-    sum(dcase$Outcome1==0)
+                       sum(dcase$Outcome1==0)
 }
 
 # get points for PR curve
@@ -735,9 +805,9 @@ for (i in 1:length(adnexusort)){
 prcptsadnexu = as.data.frame(matrix(NA, nrow = length(adnexusort), ncol = 2))
 for (i in 1:length(adnexusort)){
   prcptsadnexu[i, 1] = sum(dcase$pmalwou[dcase$Outcome1==1] >= adnexusort[i]) / 
-    sum(dcase$Outcome1==1)
+                       sum(dcase$Outcome1==1)
   prcptsadnexu[i, 2] = sum(dcase$pmalwou[dcase$Outcome1==1] >= adnexusort[i]) / 
-    sum(dcase$pmalwou >= adnexusort[i])
+                       sum(dcase$pmalwou >= adnexusort[i])
 }
 
 
@@ -807,7 +877,7 @@ p <- ggplot(dcase, aes(x = Out1, y = pmalwou, fill = Out1)) +
         axis.text.y = element_text(size = 12), 
         axis.title.x = element_blank(),
         axis.title.y = element_text(size = 14, face="bold")) +
-  ylab("Estimated risk of malignancy")
+  ylab("Estimated risk of malignancy")+ theme_classic()
 p
 
 # measures for overall classification
@@ -823,15 +893,15 @@ adnexusort = sort(dcase$pmalwou)
 
 clsptsadnexu = as.data.frame(matrix(NA, nrow = length(adnexusort), ncol = 4))
 for (i in 1:length(adnexusort)){
-  clsptsadnexu[i, 1] = sum(dcase$pmalwou[dcase$Outcome1==1] >= adnexusort[i])/ 
-    sum(dcase$Outcome1==1)
-  clsptsadnexu[i, 2] = sum(dcase$pmalwou[dcase$Outcome1==0] < adnexusort[i]) / 
-    sum(dcase$Outcome1==0)
-  clsptsadnexu[i, 3] = sum(dcase$Outcome1[dcase$pmalwou>=adnexusort[i]] == 1)/ 
-    sum(dcase$pmalwou>=adnexusort[i])
-  clsptsadnexu[i, 4] = sum(dcase$Outcome1[dcase$pmalwou<adnexusort[i]] == 0) / 
-    sum(dcase$pmalwou<adnexusort[i])
-}  
+    clsptsadnexu[i, 1] = sum(dcase$pmalwou[dcase$Outcome1==1] >= adnexusort[i])/ 
+      sum(dcase$Outcome1==1)
+    clsptsadnexu[i, 2] = sum(dcase$pmalwou[dcase$Outcome1==0] < adnexusort[i]) / 
+      sum(dcase$Outcome1==0)
+    clsptsadnexu[i, 3] = sum(dcase$Outcome1[dcase$pmalwou>=adnexusort[i]] == 1)/ 
+      sum(dcase$pmalwou>=adnexusort[i])
+    clsptsadnexu[i, 4] = sum(dcase$Outcome1[dcase$pmalwou<adnexusort[i]] == 0) / 
+      sum(dcase$pmalwou<adnexusort[i])
+  }  
 
 par(mfrow = c(2,2))
 par(mar = c(3.7, 4, 2, 2)) # Set the margin on all sides to 2
@@ -879,39 +949,43 @@ ClassADNEXu = ClassPerfBin(y = dcase$Outcome1, p = dcase$pmalwou, cut = 0.1)
 # get data for decision curve, smoothed decision curve, and cost curve
 
 dcaadnexu <- decision_curve(Outcome1~pmalwou,
-                            data = dcase,
-                            fitted.risk = TRUE, 
-                            thresholds = seq(0, 1, by = .01), 
-                            confidence.intervals = F)
+                           data = dcase,
+                           fitted.risk = TRUE, 
+                           thresholds = seq(0, 1, by = .01), 
+                           confidence.intervals = F)
 
 dcasmu=as.data.frame(dcaadnexu[[1]][1:length(seq(0, 1, by = .01)), 6])
 colnames(dcasmu) = c("orig")
 for (i in 1:length(dcasmu$orig)){
   dcasmu$sm[i] = ifelse(i %in% c(1,length(dcasmu)),
-                        dcasmu$orig[i],
-                        ifelse(i %in% c(2,length(dcasmu$orig)-1),
-                               mean(dcasmu$orig[c((i-1):(i+1))]),
-                               mean(dcasmu$orig[c((i-2):(i+2))]))
+                       dcasmu$orig[i],
+                       ifelse(i %in% c(2,length(dcasmu$orig)-1),
+                              mean(dcasmu$orig[c((i-1):(i+1))]),
+                              mean(dcasmu$orig[c((i-2):(i+2))]))
   )
 }
 
-# cost curve calculations
+# EC values for the model
+ecmodelu = ecplotv(y = dcase$Outcome1, p = dcase$pmalwou, 
+                  ncostfp = c(1:99)/100)
 
-ccadnexu0 = prediction(dcase$pmalwou, dcase$Outcome1)
-ccadnexu = performance(ccadnexu0, measure = "ecost")
-ccadnexu_pc = ccadnexu@x.values[[1]]
-ccadnexu_nec = ccadnexu@y.values[[1]]
+# EC values for treat all and treat none
+ncostfp = c(1:99)/100
+ecTAu = ncostfp * (mean(dcase$Outcome1) / (1 - mean(dcase$Outcome1))) 
+ecTNu = (1-ncostfp) * ((1 - mean(dcase$Outcome1)) / mean(dcase$Outcome1))
 
-# decision curve and cost curve
+# Decision curves using NB, SNB, or EC
 
 grid = seq(0, 1, by = .01)
 ngrid = length(grid)
+
+# Prepare panels:
 par(mfrow = c(2,2))
 par(mar = c(3.7, 4, 2, 2)) # Set the margin on all sides to 2
 
-plot(grid, dcasmu$sm, type = "l", col = "darkgray", lwd = 5, lty = 3, 
-     main = "A", xlim = c(0,1), ylim = c(0,0.5), xlab = "", ylab = "", 
-     cex.axis=0.8)
+# Decision curve with NB and smoothed version
+plot(grid, dcasmu$sm, type = "l", col = "darkgray", lwd = 5, lty = 3, main = "A", 
+     xlim = c(0,1), ylim = c(0,0.5), xlab = "", ylab = "", cex.axis=0.8)
 lines(grid, dcaadnexu[[1]][1:ngrid, 6], col = "black", lwd = 2)
 lines(grid, dcaadnexu[[1]][(ngrid + 1):(2 * ngrid),6], col = "gray", lwd = 2)
 lines(grid, rep(0, ngrid), col = "gray", lwd = 1)
@@ -922,6 +996,7 @@ legend("topright", inset = .02, col = c("black", "gray", "gray", "gray"),
 title(ylab="Net benefit", line=2.2, cex.lab = 1.1)
 title(xlab="Decision threshold", line=2.2, cex.lab = 1.1)
 
+# Decision curve with standardized NB
 plot(grid, dcaadnexu[[1]][1:ngrid, 7], type = "l", col = "black", lwd = 2, 
      main = "B", xlim = c(0,1), ylim = c(0,1), xlab = "", ylab = "", 
      cex.axis=0.8)
@@ -933,16 +1008,19 @@ legend("topright", inset = .02, legend = c("ADNEX", "All", "None"),
 title(ylab="Standardized net benefit", line=2.2, cex.lab = 1.1)
 title(xlab="Decision threshold", line=2.2, cex.lab = 1.1)
 
-plot(ccadnexu_pc, ccadnexu_nec, type = "l", lwd = 2, lty = 1, col = "black", 
-     main = "C", xlab = "", ylab = "", cex.lab = 1.2, cex.axis=0.8, 
-     xlim = c(0, 1), ylim = c(0, 0.55))
-lines(c(0, .5), c(0, .5), lwd = 2, lty = 1, col = "gray")
-lines(c(.5, 1), c(.5, 0), lwd = 2, lty = 1, col = "gray")
-legend("topright", inset = .02, legend = c("ADNEX", "Default"), 
-       col = c("black", "gray"), lty = c(1, 1), lwd = c(2, 2), cex = 1)
-title(ylab="Normalized expected cost", line=2.2, cex.lab = 1.1)
-title(xlab="PC(+) - Probability*Cost", line=2.2, cex.lab = 1.1)
+# EC curve
+plot(1-ncostfp, ecmodelu[1,], type = "l", col = "black", lwd = 2, main = "C", 
+     xlim = c(0,1), ylim = c(0,0.5), xlab = "", ylab = "", 
+     cex.axis=0.8)
+lines(1-ncostfp,ecTAu, col="gray",lwd=2)
+lines(1-ncostfp,ecTNu, col="gray",lwd=1)
+legend("topright", inset = .02, legend = c("ADNEX", "All", "None"), 
+       col = c("black", "gray", "gray"), lty = c(1, 1, 1), lwd = c(2, 2, 1), 
+       cex = 1)
+title(ylab="Expected cost", line=2.2, cex.lab = 1.1)
+title(xlab="Normalized cost of false negative", line=2.2, cex.lab = 1.1)
 
+# Close panel:
 par(mfrow = c(1,1))
 
 # measures for utility
