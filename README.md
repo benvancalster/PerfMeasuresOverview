@@ -1,5 +1,5 @@
 # PerfMeasuresOverview
-[R code](https://github.com/benvancalster/PerfMeasuresOverview/blob/main/PerfMeasuresOverview.R) and [Python](https://github.com/benvancalster/PerfMeasuresOverview/blob/main/PerfMeasuresPython.py) code and [predictions for the case study](https://github.com/benvancalster/PerfMeasuresOverview/blob/main/data_case_study.txt) from Van Calster et al (Performance evaluation of predictive AI in Medical Practice: Overview and Guidance)
+[R](https://github.com/benvancalster/PerfMeasuresOverview/blob/main/PerfMeasuresOverview.R) and [Python](https://github.com/benvancalster/PerfMeasuresOverview/blob/main/PerfMeasuresPython.py) code and [predictions for the case study](https://github.com/benvancalster/PerfMeasuresOverview/blob/main/data_case_study.txt) from Van Calster et al (Performance evaluation of predictive AI in Medical Practice: Overview and Guidance)
 
 This paper was developed under the wings of the STRATOS (STRengthening Analytical Thinking for Observational Studies) consortium. It reviews 32 performance measures, and provides recommendations on choosing performance measures.
 The context is a clinical risk prediction model (broadly referred to as Predictive AI) that is developed with the aim of being used in clinical/medical practice.
